@@ -1,0 +1,46 @@
+/* app.overlay */
+
+/ {
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+    };
+
+    aliases {
+        myled0 = &user_led0;
+        mysw0 = &user_button0;
+    };
+
+    overlay_leds {        
+        compatible = "gpio-leds";
+
+        user_led0: led_0 {
+            label = "Led0 b22";
+            gpios = <&gpiob 22 GPIO_ACTIVE_LOW>;
+        };
+    };
+
+    overlay_gpio_keys {
+        compatible = "gpio-keys";   
+    /*    deboune-interval-ms = <50>;   */
+    /*    polling-mode;                 */
+
+        user_button0: button_0 {
+            label = "Button0 c6";
+            gpios = <&gpioc 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        };
+    };
+};
+
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+/** fmuk64f.dts ***
+zephyr_udc0: &usbotg {
+    compatible = "nxp,kinetis-usbd";
+    status = "okay";
+    num-bidir-endpoints = <8>;
+};
+**/
