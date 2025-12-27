@@ -13,98 +13,109 @@
 #include "m_button.h"
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/kernel.h>
-#include <zephyr/sys/util.h>
-#include <zephyr/sys/printk.h>
+
+// #include <zephyr/sys/printk.h>
 #include <inttypes.h>
+#include <errno.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(m_button);
 
-/*
- * Get button configuration from the devicetree sw0 alias. This is mandatory.
- */
-#define SW0_NODE	DT_ALIAS(mysw0)
-#if !DT_NODE_HAS_STATUS_OKAY(SW0_NODE)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-/*
- * The led0 devicetree alias is optional. If present, we'll use it
- * to turn on the LED whenever the button is pressed.
- */
-#define LED0_NODE	DT_ALIAS(myled0)
-#if !DT_NODE_HAS_STATUS_OKAY(LED0_NODE)
-#error "Unsupported board: led0 devicetree alias is not defined"
-#endif
-static struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(LED0_NODE, gpios, {0});
 
+
+static struct gpio_dt_spec s_btn = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+
+static struct gpio_dt_spec s_led = GPIO_DT_SPEC_GET_OR(LED0_NODE, gpios, {0});
 
 static struct gpio_callback button_handler;
 
-void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+void (*s_handler)(void);
+
+/**************************
+ * cbutton pressed callback 
+ * */
+void s_button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
-	if (led.port) {
-		/* If we have an LED, match its state to the button's. */
-		int val = gpio_pin_get_dt(&button);
-		if (val >= 0) { 
-			gpio_pin_set_dt(&led, val);
-		}
-	}
+	LOG_DBG("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+	
+	/* do something */
+	s_handler();
+	
+	// /* If we have an LED, match its state to the button's. */
+	// if (s_led.port) {		
+	// 	int val = gpio_pin_get_dt(&s_btn);
+	// 	if (val >= 0) { 
+	// 		gpio_pin_set_dt(&s_led, val);
+	// 	}
+	// }
 }
 
-int button_init(void)
+
+int m_button_init(void(*handler)(void))
 {
 	int ret;
+	s_handler = handler; 
 
-	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
-		return 0;
+	if (!gpio_is_ready_dt(&s_btn)) {
+		LOG_DBG("Error: button device %s is not ready\n", s_btn.port->name);
+		return -ENODEV;
 	}
 
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	ret = gpio_pin_configure_dt(&s_btn, GPIO_INPUT);
 	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
-		return 0;
+		LOG_DBG("Error %d: failed to configure %s pin %d\n",
+		       ret, s_btn.port->name, s_btn.pin);
+		return -ENODEV;
 	}
 
-	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	ret = gpio_pin_interrupt_configure_dt(&s_btn, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
-		return 0;
+		LOG_DBG("Error %d: failed to configure interrupt on %s pin %d\n",
+			ret, s_btn.port->name, s_btn.pin);
+		return -EINTR;
 	}
 
-	gpio_init_callback(&button_handler, button_pressed, BIT(button.pin));
-	gpio_add_callback(button.port, &button_handler);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);	
+	gpio_init_callback(&button_handler, s_button_pressed, BIT(s_btn.pin));
+	gpio_add_callback(s_btn.port, &button_handler);
+	LOG_DBG("Set up button at %s pin %d\n", s_btn.port->name, s_btn.pin);	
 
 	return 0;
 }
 
-int led_init(void)
+int m_led_init(void)
 {
 	int ret;
-	if (led.port && !gpio_is_ready_dt(&led)) {
-		printk("Error: LED device %s is not ready; ignoring it\n", led.port->name);
-		led.port = NULL;
+	if (s_led.port && !gpio_is_ready_dt(&s_led)) {
+		LOG_DBG("Error: LED device %s is not ready; ignoring it\n", s_led.port->name);
+		s_led.port = NULL;
+		return -ENODEV;
 	}
-	if (led.port) {
-		ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
+	if (s_led.port) {
+		ret = gpio_pin_configure_dt(&s_led, GPIO_OUTPUT);
 		if (ret != 0) {
-			printk("Error %d: failed to configure LED device %s pin %d\n",
-			       ret, led.port->name, led.pin);
-			led.port = NULL;
+			LOG_DBG("Error %d: failed to configure LED device %s pin %d\n",
+			       ret, s_led.port->name, s_led.pin);
+			s_led.port = NULL;
+			return -ENODEV;
 		} else {
-			printk("Set up LED at %s pin %d\n", led.port->name, led.pin);
+			LOG_DBG("Set up LED at %s pin %d\n", s_led.port->name, s_led.pin);
 		}
 	}
 	return 0;
 }
 
-int led_set(int val)
+int m_led_set(int val)
 {
-	gpio_pin_set_dt(&led, val);
+	int ret;
+	LOG_DBG("Set LED to %d\n", val);
+	ret = gpio_pin_set_dt(&s_led, val);
 	return 0;
 }
 
+int m_led_toggle(void)
+{
+	int ret;
+	LOG_DBG("Set LED toggle\n");
+	ret = gpio_pin_toggle_dt(&s_led);
+	return 0;
+
+}
